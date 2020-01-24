@@ -4,7 +4,6 @@ import os
 import numpy as np
 import nibabel as nib
 from scipy import spatial
-import matplotlib.tri as tri
 
 
 def create_adjac_vertex(vertices,faces): # basic version
@@ -364,8 +363,13 @@ def write_out_labels(surface_labels, vert_region_map, surface_file, output_direc
 		f = open("%s/%s.label" % (output_directory, roi_name), "w")
 		f.write("#!ascii label  , from %s vox2ras=TkReg\n" % subject)
 		f.write("%d\n" % n_vert)
-		for j in range(len(vert_roi)): # write only "eeg" electrodes (not "misc")
-			f.write("%d %1.3f  %1.3f  %1.3f 0.0000000000\n" % (vert_index[j], vert_roi[j,0], vert_roi[j,1], vert_roi[j,2]))
+		if vert_roi.shape[0] == 1:
+			f.write("%d %1.3f  %1.3f  %1.3f 0.0000000000\n" % (vert_index, vert_roi[0,0], vert_roi[0,1], vert_roi[0,2]))
+		elif vert_roi.shape[0] > 1:
+			for j in range(len(vert_roi)): # write only "eeg" electrodes (not "misc")
+				f.write("%d %1.3f  %1.3f  %1.3f 0.0000000000\n" % (vert_index[j], vert_roi[j,0], vert_roi[j,1], vert_roi[j,2]))
+		else:
+			print("No indices found")
 		f.close()
 
 
@@ -385,8 +389,11 @@ def spherical_polyhedron(n_vertices = 256):
 	return(vertices, faces)
 
 
-def eeg_sensors_to_surface(eeg_coordinates, unit_size = 5):
-	vertex_array, faces_array = spherical_polyhedron()
+def eeg_sensors_to_surface(eeg_coordinates, unit_size = 5, generate = False):
+	if generate: 
+		vertex_array, faces_array = spherical_polyhedron()
+	else:
+		vertex_array, faces_array = nib.freesurfer.read_geometry('/mnt/mbServerProjects/SCRATCH/USERS/tris/CONNECTOME_INTEGRAMENT/TVB/tvb-conversion/sphere.srf')
 	vertex_array = vertex_array * unit_size
 	face_interator = 0
 	out_v = []
@@ -398,6 +405,10 @@ def eeg_sensors_to_surface(eeg_coordinates, unit_size = 5):
 	out_v = np.concatenate(out_v)
 	out_f = np.concatenate(out_f)
 	return (out_v, out_f)
+
+def write_surf_tvb(in_surf_file, out_surf_file, s_info):
+	v_is, f_is = nib.freesurfer.read_geometry(in_surf_file)
+	nib.freesurfer.io.write_geometry(out_surf_file, v_is, f_is, volume_info = s_info)
 
 
 

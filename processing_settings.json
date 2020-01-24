@@ -53,7 +53,7 @@
          "R_MBelt",
          "R_LBelt"
       ],
-      "label_info": "/mnt/mbServerProjects/SCRATCH/USERS/tris/CONNECTOME_INTEGRAMENT/TVB/TVB-conversion/HCP_label_info.txt"
+      "label_info": "/mnt/mbServerProjects/SCRATCH/USERS/tris/CONNECTOME_INTEGRAMENT/TVB/tvb-conversion/HCP_label_info.txt"
    },
    "parcellation": "hcpmmp1",
    "recon_all_dir": "/mnt/mbServerData/data/FREESURFER_SUBJECTS/IntegraMent",

@@ -4,6 +4,7 @@ import os
 import json
 import mne
 import shutil
+import glob
 
 import numpy as np
 import argparse as ap
@@ -16,7 +17,7 @@ from mne.io.constants import FIFF
 from scipy import spatial
 from subprocess import Popen, PIPE
 
-from functions import parc_get_mean_coord, subset_surface_by_cortex_label, create_adjac_vertex, vectorized_surface_smooth, get_surface_area, write_out_labels, compute_normals, eeg_sensors_to_surface
+from functions import parc_get_mean_coord, subset_surface_by_cortex_label, create_adjac_vertex, vectorized_surface_smooth, get_surface_area, write_out_labels, compute_normals, eeg_sensors_to_surface, write_surf_tvb
 
 
 DESCRIPTION = "Convert data of MRtrix3_connectome and fmriprep pipelines to TVB format."
@@ -129,6 +130,8 @@ def run(opts):
 											subset_labels = label_names,
 											output_surf_directory = output_surf_directory)
 
+	s_info_fs = s_info
+
 	#%%
 	# =============================================================================
 	# compute source space 
@@ -136,7 +139,7 @@ def run(opts):
 	# decimate surface
 
 	pial_dec = mne.decimate_surface(v, f, n_triangles = 30000)
-	nib.freesurfer.io.write_geometry('%s/cortex_dec.srf' % output_surf_directory, pial_dec[0], pial_dec[1], volume_info=s_info)
+	nib.freesurfer.io.write_geometry('%s/cortex_dec.srf' % output_surf_directory, pial_dec[0], pial_dec[1], volume_info = s_info_fs)
 
 	# complete decimated surface (add normals + other parameters)
 	pial_dict = {'rr':pial_dec[0]/1000, 'tris':pial_dec[1]}
@@ -182,9 +185,9 @@ def run(opts):
 
 	nib.freesurfer.io.write_geometry('%s/%s/bem/inner_skull.surf' % (recon_all_dir, subject), v_smooth, f_is, volume_info = s_info)
 
-	os.system("cp %s/%s/bem/watershed/%s_outer_skull_surface %s/%s/bem/outer_skull.surf" % (recon_all_dir, subject, subject, recon_all_dir, subject))
-	os.system("cp %s/%s/bem/watershed/%s_outer_skin_surface %s/%s/bem/outer_skin.surf" % (recon_all_dir, subject, subject, recon_all_dir, subject))
-	os.system("cp %s/%s/bem/watershed/%s_brain_surface %s/%s/bem/brain.surf" % (recon_all_dir, subject, subject, recon_all_dir, subject))
+	os.system("cp --remove-destination %s/%s/bem/watershed/%s_outer_skull_surface %s/%s/bem/outer_skull.surf" % (recon_all_dir, subject, subject, recon_all_dir, subject))
+	os.system("cp --remove-destination %s/%s/bem/watershed/%s_outer_skin_surface %s/%s/bem/outer_skin.surf" % (recon_all_dir, subject, subject, recon_all_dir, subject))
+	os.system("cp --remove-destination %s/%s/bem/watershed/%s_brain_surface %s/%s/bem/brain.surf" % (recon_all_dir, subject, subject, recon_all_dir, subject))
 
 	conductivity = [0.3, 0.006, 0.3]  # for three layers
 	try:
@@ -232,7 +235,7 @@ def run(opts):
 
 	# create info object
 	ch_type = ["eeg" for i in range(len(mon.ch_names))]
-	ch_type[-3:] = ["misc", "misc", "misc"] # needed for caps which include lpa, rpa and nza "channels" at the end
+#	ch_type[-3:] = ["misc", "misc", "misc"] # needed for caps which include lpa, rpa and nza "channels" at the end
 	info = mne.create_info(ch_names = mon.ch_names, sfreq = 256, ch_types = ch_type, montage=mon)
 
 	# load head surface
@@ -311,6 +314,33 @@ def run(opts):
 					parcellation = "hcpmmp1",
 					subject = subject)
 
+	# make annot
+	os.system("cp %s/cortex_dec.srf %s/%s/surf/lh.cortex_dec.srf" % (output_surf_directory,recon_all_dir, subject))
+	label_files_long = " --l ".join(glob.glob("%s/decimated_labels_hcpmmp1/*label" % output_surf_directory))
+	os.system("mris_label2annot --s %s --ctab %s --l %s --annot-path %s/hcpmmp1_dec.annot --surf cortex_dec.srf --h lh --sd %s" % (subject, label_info_file, label_files_long, output_surf_directory, recon_all_dir))
+	os.system("rm %s/%s/surf/lh.cortex_dec.srf" % (recon_all_dir, subject))
+
+
+	# write BEM surfaces in RAS
+	write_surf_tvb(in_surf_file = '%s/%s/bem/brain.surf' % (recon_all_dir, subject),
+						out_surf_file = "%s/bem_brain.srf" % output_surf_directory,
+						s_info = s_info_fs)
+
+	write_surf_tvb(in_surf_file = '%s/%s/bem/inner_skull.surf' % (recon_all_dir, subject),
+						out_surf_file = "%s/bem_inner_skull.srf" % output_surf_directory,
+						s_info = s_info_fs)
+
+	write_surf_tvb(in_surf_file = '%s/%s/bem/outer_skull.surf' % (recon_all_dir, subject),
+						out_surf_file = "%s/bem_outer_skull.srf" % output_surf_directory,
+						s_info = s_info_fs)
+
+	write_surf_tvb(in_surf_file = '%s/%s/bem/outer_skin.surf' % (recon_all_dir, subject),
+						out_surf_file = "%s/bem_outer_skin.srf" % output_surf_directory,
+						s_info = s_info_fs)
+
+
+
+
 	# [leave this alone for now.]
 	# write cortical surface (i.e. source space) to file
 	cort_surf_path = tvb_output_path+"/sub-"+subject+"_Cortex/"
@@ -365,9 +395,14 @@ def run(opts):
 	eegp_loc_converted = affine_xfm.dot(np.concatenate((eegp_loc * 1000 ,np.ones((eegp_loc.shape[0],1))), axis=1).T)[:3,:].T
 
 	f = open(tvb_output["EEG_Locations"], "w")
-	for i in range((np.array(ch_type)=="eeg").sum()): # write only "eeg" electrodes (not "misc")
-		f.write(mon.ch_names[i]+" "+"%.6f" %eegp_loc_converted[i,0]+" "+"%.6f" %eegp_loc_converted[i,1]+" "+"%.6f" %eegp_loc_converted[i,2]+"\n")
+	for i in range(len(eegp_loc_converted)):
+		f.write(mon.ch_names[i]+" "+"%.6f" % eegp_loc_converted[i,0]+" "+"%.6f" %eegp_loc_converted[i,1]+" "+"%.6f" % eegp_loc_converted[i,2]+"\n")
 	f.close()
+
+
+	v_eeg, f_eeg = eeg_sensors_to_surface(eeg_coordinates = eegp_loc_converted, unit_size = 4, generate = False)
+	nib.freesurfer.io.write_geometry('%s/eeg_biosemi64.srf' % (output_surf_directory), v_eeg, f_eeg)
+
 	print("EEG locations saved  !")
 
 	# create and save connectome.zip
