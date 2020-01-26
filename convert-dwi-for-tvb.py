@@ -90,7 +90,7 @@ def run(opts):
 
 	# Fix labels and get centroids and area from parcellation image (voxel)
 	parc_img = nib.load(parc_image)
-	parc_data = parc_img.get_data()
+	parc_data = parc_img.get_fdata()
 	lables, labels_sizes, label_mean_coordinates = parc_get_mean_coord(parc_data, parc_img.affine, closest_value_voxel = True)
 
 	label_info = np.genfromtxt(label_info_file, dtype=str)
